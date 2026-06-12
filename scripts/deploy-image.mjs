@@ -109,8 +109,19 @@ console.log('→ package (amd64, COPY-only)')
 sh('docker', ['buildx', 'build', '--platform', 'linux/amd64', '-f', 'compose/package.Dockerfile', '--build-arg', `PORT=${APP.port}`, '-t', tag, '--load', APP.outputDir])
 console.log('→ smoke test')
 await smokeTest(tag)
-console.log('→ push')
-sh('docker', ['push', tag])
+// Docker 28 (GitHub runners) never re-sends credentials after the registry's
+// 401 challenge because the anonymous-GET /v2/ ping defeats its auth setup;
+// docker ≥29 (Mac, chatty) handles it. Ship the image to chatty and push
+// host-side — works from every client version and needs no registry secret.
+console.log('→ ship image to chatty + push to registry')
+sh('bash', ['-c', `docker save ${tag} | gzip | ssh -o ConnectTimeout=15 -o BatchMode=yes ${USER}@${HOST} 'gunzip | docker load'`])
+ssh(`
+  set -euo pipefail
+  PASS=$(grep -E '^pass' /home/openape/registry/push-credentials.txt | cut -d' ' -f2)
+  echo "$PASS" | docker login registry.openape.ai -u openape --password-stdin >/dev/null 2>&1
+  docker push ${tag} >/dev/null
+  echo pushed
+`)
 
 console.log('→ chatty: sync compose, pin tag, pull + up')
 ssh(`mkdir -p ${APP.prodDir}`)
