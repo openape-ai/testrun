@@ -1,101 +1,69 @@
-# Deploying the plans app
+# Deploy — tested-image Docker on chatty
 
-This guide is host-agnostic. Every host-specific value is env-driven, so the
-same script works for prod, staging, and a self-hosted instance on your own
-box.
+testrun.openape.ai runs as a Docker container on chatty, following the same
+pipeline as the four monorepo web apps (idp/troop/chat/org):
 
-## 1. Prerequisites on the target host
-
-- A Linux box with `node 22+`, `npm`, `nginx`, and `certbot` installed.
-- A dedicated Unix user that owns the app. `openape` is the default; any
-  unprivileged user works.
-- SSH key auth for that user from wherever you run the deploy script (or
-  from GitHub Actions via `DEPLOY_SSH_KEY`).
-
-Create the user if needed:
-
-```bash
-sudo useradd -m -s /bin/bash openape
-sudo mkdir -p /home/openape/.ssh
-sudo tee /home/openape/.ssh/authorized_keys <<<'ssh-ed25519 AAAA... your-deploy-key'
-sudo chown -R openape:openape /home/openape/.ssh
-sudo chmod 700 /home/openape/.ssh
-sudo chmod 600 /home/openape/.ssh/authorized_keys
+```
+pnpm build (.output, native)
+  → docker buildx --platform linux/amd64 -f compose/package.Dockerfile (COPY-only)
+  → local smoke run (/api/health with dummy env)
+  → docker push registry.openape.ai/openape-testrun:prod-<sha>
+  → chatty: scp compose/chatty.yml → /home/openape/prod-testrun/docker-compose.yml
+            pin TESTRUN_TAG in /home/openape/prod-testrun/.env (PREV kept for rollback)
+            docker compose pull + up
+  → external health gate https://testrun.openape.ai/api/health
+  → on failure: revert pin + up again
 ```
 
-## 2. Run server-setup.sh once
+## Commands
 
 ```bash
-# as root on the target host
-export DEPLOY_USER=openape
-export DEPLOY_SERVICE=openape-testrun.service
-export DEPLOY_PORT=3006
-export PUBLIC_HOST=testrun.openape.ai
-
-curl -fsSL https://raw.githubusercontent.com/openape-ai/tasks/main/scripts/server-setup.sh | bash
-# or: sudo bash scripts/server-setup.sh after cloning the repo
+pnpm run deploy:image        # local deploy (needs docker login + ssh openape@chatty)
 ```
 
-This creates the release directory layout, the systemd unit, sudoers rule,
-shared `.env` template, and an nginx vhost. Read the final output of the
-script — it lists the follow-up steps.
+The GitHub Actions `Deploy` workflow runs the same script on every main push.
 
-Next:
+Required GH secrets/vars: `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`,
+`REGISTRY_PASSWORD` (push password for user `openape`, source:
+`/home/openape/registry/push-credentials.txt` on chatty) and var
+`DEPLOY_HOST=chatty.delta-mind.at`.
 
-- Fill in `/home/openape/projects/openape-testrun/shared/.env` with 32-char
-  secrets (`openssl rand -hex 32` is a good default).
-- Attach TLS: `sudo certbot --nginx -d testrun.openape.ai`.
+## Runtime layout on chatty
 
-## 3. Configure GitHub
+- `/home/openape/prod-testrun/docker-compose.yml` + `.env` (`TESTRUN_TAG`,
+  `TESTRUN_TAG_PREV`) — the compose project (`openape-testrun`).
+- The container mounts `/home/openape/projects/openape-testrun/shared` at the
+  identical path and reads the systemd-era `shared/.env` via `env_file` —
+  SQLite (`NUXT_TURSO_URL=file:…/shared/data/testrun.db`) and secrets are
+  untouched by deploys.
+- Port publishes on `127.0.0.1:3006`, exactly where nginx already proxies
+  (vhost `/etc/nginx/sites-available/testrun.openape.ai`, 8443/8081 behind
+  the Traefik SNI-passthrough edge).
+- `user: 999:988` (openape) keeps DB/WAL files openape-owned.
 
-**Secrets** (repo → Settings → Secrets and variables → Actions):
-
-- `DEPLOY_SSH_KEY` — private ed25519 key for the deploy user
-- `DEPLOY_KNOWN_HOSTS` — output of `ssh-keyscan <host>`
-
-**Variables** (same page, different tab):
-
-- `DEPLOY_HOST` — hostname or SSH alias of the target
-- `DEPLOY_PUBLIC_URL` — full https URL for the health check (default
-  `https://testrun.openape.ai`)
-
-Optional overrides (with defaults shown):
-
-- `DEPLOY_USER=openape`
-- `DEPLOY_BASE=/home/openape/projects/openape-testrun`
-- `DEPLOY_PORT=3006`
-- `DEPLOY_SERVICE=openape-testrun.service`
-
-## 4. First deploy
-
-Run the `Deploy` workflow manually (`workflow_dispatch`). On success:
-
-- `${DEPLOY_BASE}/releases/<timestamp>/` holds the built app.
-- `${DEPLOY_BASE}/current` symlinks to it.
-- `systemctl status openape-testrun.service` shows `active (running)`.
-- `curl -fsS https://testrun.openape.ai/api/me` returns `401` (healthy).
-
-Subsequent pushes to `main` that touch `app/**`, `scripts/deploy.sh`,
-`pnpm-lock.yaml`, or `.github/workflows/deploy.yml` trigger the same flow.
-
-## 5. Rollback
-
-Automatic: if the health check fails after a deploy, the workflow reattaches
-the previous release and restarts the service.
-
-Manual:
+## Rollback
 
 ```bash
-ssh openape@<host>
-ls -1 ~/projects/openape-testrun/releases/
-ln -sfn ~/projects/openape-testrun/releases/<older-ts> ~/projects/openape-testrun/current
-sudo systemctl restart openape-testrun.service
+# automatic: deploy-image.mjs reverts to TESTRUN_TAG_PREV when the health gate fails
+# manual:
+ssh openape@chatty.delta-mind.at
+cd ~/prod-testrun && sed -i 's/^TESTRUN_TAG=.*/TESTRUN_TAG=<known-good>/' .env
+docker compose --env-file .env -f docker-compose.yml up -d testrun
 ```
 
-## 6. Observability
+## Emergency fallback (systemd)
 
-- `sudo journalctl -u openape-testrun.service -f` — live logs.
-- `curl -fsS https://testrun.openape.ai/api/me` — 401 means healthy, anything
-  else is a signal.
-- Database lives at `${DEPLOY_BASE}/shared/data/testrun.db`. Back it up with
-  `sqlite3 testrun.db ".backup /path/to/backup-$(date +%F).db"` on a cron.
+The pre-container unit stays installed but disabled. If the registry or
+Docker is broken, the last rsync release on disk still works:
+
+```bash
+ssh openape@chatty.delta-mind.at 'cd ~/prod-testrun && docker compose down'
+ssh ubuntu@chatty.delta-mind.at 'sudo systemctl start openape-testrun'
+```
+
+## One-time server setup
+
+`scripts/server-setup.sh` (run once as root) created the dirs, `shared/.env`,
+the systemd unit and the nginx vhost. New hosts additionally need the DNS
+A record, the DNS-01 certbot cert and the Traefik passthrough entry — see the
+plan `01KTY362XA63EMA1RW29CTK982` on plans.openape.ai for the exact commands.

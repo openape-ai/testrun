@@ -8,6 +8,7 @@
     "dev": "pnpm --filter app dev",
     "build": "pnpm --filter app build",
     "cli:build": "pnpm --filter cli build",
+    "deploy:image": "node scripts/deploy-image.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"
   },

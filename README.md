@@ -59,6 +59,11 @@ Manifest contract: `ape-testruns docs manifest` (source: `cli/src/docs/manifest.
 
 ## Deploy
 
-Self-hosted (nginx + systemd, port 3006), same mechanics as openape-tasks:
-`scripts/server-setup.sh` once as root, then `scripts/deploy.sh` per release
-(or the GitHub Actions `Deploy` workflow). Details: `docs/deploy.md`.
+Tested-image Docker deploy on chatty, same mechanics as the four monorepo
+web apps: `pnpm run deploy:image` builds `.output` natively, packages a
+COPY-only amd64 image (`compose/package.Dockerfile`), smoke-tests it, pushes
+to registry.openape.ai and lets chatty `docker compose pull && up` with an
+`/api/health` gate and tag rollback (`TESTRUN_TAG_PREV`). The GitHub Actions
+`Deploy` workflow runs the same script on every main push. nginx keeps
+proxying 127.0.0.1:3006; the systemd unit stays disabled as the emergency
+fallback. Details: `docs/deploy.md`.
