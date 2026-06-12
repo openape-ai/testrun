@@ -1,0 +1,40 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+.output
+.nuxt
+.nitro
+.cache
+dist
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# IDE
+.vscode/*
+!.vscode/settings.json.example
+.idea
+*.swp
+
+# OS
+.DS_Store
+
+# Local DB
+*.db
+*.db-journal
+
+# Test coverage
+coverage
+
+# local dev database
+dev.db
+err.log

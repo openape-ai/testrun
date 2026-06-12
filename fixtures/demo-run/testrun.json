@@ -1,0 +1,54 @@
+{
+  "title": "OpenApe Testrun — self-check E2E",
+  "project": "openape-testrun",
+  "summary": "The service verifies itself: the landing page renders on desktop and mobile, and unknown report links fail gracefully. One test is intentionally marked failed to show how failures look.",
+  "tests": [
+    {
+      "id": "landing-renders",
+      "title": "Landing page renders with login",
+      "description": "The start page shows the value proposition and the email login — no extra click to a separate login route.",
+      "status": "passed",
+      "steps": [
+        {
+          "title": "Desktop view",
+          "caption": "Headline, email field and the **Login with OpenApe** button are above the fold.",
+          "shot": "landing/01-desktop.png",
+          "status": "passed"
+        },
+        {
+          "title": "Mobile view",
+          "caption": "The same page on a 390px viewport — fully usable on a phone.",
+          "shot": "landing/02-mobile.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "unknown-report-404",
+      "title": "Unknown report links fail gracefully",
+      "description": "Opening `/r/does-not-exist` shows a friendly not-found page instead of an error dump.",
+      "status": "passed",
+      "steps": [
+        {
+          "title": "Not-found page",
+          "caption": "The viewer sees a clear *Report not found* message.",
+          "shot": "report/01-not-found.png"
+        }
+      ]
+    },
+    {
+      "id": "example-failure",
+      "title": "Example of a failing test",
+      "description": "Intentionally marked as failed so the report demonstrates failure rendering.",
+      "status": "failed",
+      "error": "Expected the moon on a stick, got a stick.\n\n```\nAssertionError: moon !== stick\n```",
+      "steps": [
+        {
+          "title": "Text-only failing step",
+          "caption": "Steps without screenshots render as text — useful for API assertions.",
+          "status": "failed"
+        }
+      ]
+    }
+  ]
+}
