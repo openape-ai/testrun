@@ -1,0 +1,32 @@
+name: Deploy
+# Tested-image deploy on main push (or manual dispatch). Runs on the `mac`
+# runner whose LaunchAgent session has native docker, registry login and
+# ssh openape@chatty — no deploy secrets beyond the registry login needed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'compose/**'
+      - 'scripts/deploy-image.mjs'
+      - 'pnpm-lock.yaml'
+      - '.forgejo/workflows/deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: mac
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, push and roll out tested image
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          pnpm install --frozen-lockfile
+          echo "$REGISTRY_PASSWORD" | docker login registry.openape.ai -u "$REGISTRY_USER" --password-stdin
+          node scripts/deploy-image.mjs

@@ -1,0 +1,28 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: App typecheck + build
+        run: |
+          pnpm --filter @openape-testrun/app exec nuxt prepare
+          pnpm --filter @openape-testrun/app exec nuxt typecheck
+          pnpm --filter @openape-testrun/app build
+      - name: CLI typecheck + build
+        run: |
+          pnpm --filter @openape/ape-testruns exec tsc --noEmit
+          pnpm --filter @openape/ape-testruns build
