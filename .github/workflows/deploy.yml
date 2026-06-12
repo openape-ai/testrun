@@ -41,21 +41,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Registry auth (registry.openape.ai)
-        env:
-          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-        # `docker login` is no real test here: the registry allows anonymous
-        # GETs, so login "succeeds" with any password. Probe an authed POST
-        # (fails fast on a wrong secret) and write the auth explicitly.
-        run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' -u "openape:$REGISTRY_PASSWORD" -X POST https://registry.openape.ai/v2/openape-testrun/blobs/uploads/)
-          if [ "$code" != "202" ]; then
-            echo "registry push-auth probe failed (HTTP $code) — check REGISTRY_PASSWORD"
-            exit 1
-          fi
-          mkdir -p ~/.docker
-          printf '{"auths":{"registry.openape.ai":{"auth":"%s"}}}' "$(printf 'openape:%s' "$REGISTRY_PASSWORD" | base64 -w0)" > ~/.docker/config.json
-
+      # No registry secret needed: deploy-image.mjs ships the image to chatty
+      # over SSH and pushes from there (the runner's docker 28 cannot
+      # authenticate against the anonymous-GET registry; docker ≥29 can).
       - name: Setup SSH
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
