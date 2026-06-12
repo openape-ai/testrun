@@ -30,6 +30,9 @@ services:
       - /home/openape/projects/openape-testrun/shared:/home/openape/projects/openape-testrun/shared
     ports:
       - "127.0.0.1:3006:3006"
+      # Traefik (coolify network) reaches the container via the bridge
+      # gateway — nginx is retired, the edge terminates TLS itself.
+      - "10.0.1.1:3006:3006"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3006/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
