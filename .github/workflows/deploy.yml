@@ -1,15 +1,17 @@
 name: Deploy
 
-# Auto-deploys the Nuxt app to the target host on main push.
-# Host is driven by the repo variable DEPLOY_HOST; SSH auth is secret-based.
-# Independent of ci.yml: health check + auto-rollback cover deploys.
+# Tested-image deploy on main push: builds .output natively, packages a
+# COPY-only amd64 image, smoke-tests it on the runner, pushes it to
+# registry.openape.ai and lets chatty pull + restart the container
+# (scripts/deploy-image.mjs — health gate + tag rollback included).
 
 on:
   push:
     branches: [main]
     paths:
       - 'app/**'
-      - 'scripts/deploy.sh'
+      - 'compose/**'
+      - 'scripts/deploy-image.mjs'
       - 'pnpm-lock.yaml'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
@@ -21,14 +23,10 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
-      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'openape' }}
-      DEPLOY_BASE: ${{ vars.DEPLOY_BASE }}
-      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '3006' }}
-      DEPLOY_SERVICE: ${{ vars.DEPLOY_SERVICE || 'openape-testrun.service' }}
-      DEPLOY_PUBLIC_URL: ${{ vars.DEPLOY_PUBLIC_URL || 'https://testrun.openape.ai' }}
+      CHATTY_HOST: ${{ vars.DEPLOY_HOST }}
+      CHATTY_USER: ${{ vars.DEPLOY_USER || 'openape' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -43,6 +41,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Docker login (registry.openape.ai)
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: echo "$REGISTRY_PASSWORD" | docker login registry.openape.ai -u openape --password-stdin
+
       - name: Setup SSH
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -54,8 +57,8 @@ jobs:
           chmod 600 ~/.ssh/deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           cat > ~/.ssh/config <<EOF
-          Host $DEPLOY_HOST
-            User $DEPLOY_USER
+          Host $CHATTY_HOST
+            User $CHATTY_USER
             IdentityFile ~/.ssh/deploy
             IdentitiesOnly yes
             StrictHostKeyChecking yes
@@ -63,43 +66,5 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
-      - name: Capture previous release (for rollback)
-        id: prev
-        run: |
-          PREV=$(ssh "$DEPLOY_HOST" "readlink ${DEPLOY_BASE:-/home/$DEPLOY_USER/projects/openape-testrun}/current 2>/dev/null" || echo "")
-          echo "release=$PREV" >> "$GITHUB_OUTPUT"
-          echo "Previous release: ${PREV:-<none>}"
-
-      - name: Deploy
-        run: ./scripts/deploy.sh
-
-      - name: Public HTTPS health check
-        if: env.DEPLOY_PUBLIC_URL != ''
-        run: |
-          set -euo pipefail
-          for i in 1 2 3 4 5; do
-            status=$(curl -s -o /dev/null -w '%{http_code}' "$DEPLOY_PUBLIC_URL/api/me" || echo 000)
-            if [ "$status" = '200' ] || [ "$status" = '401' ]; then
-              echo "$DEPLOY_PUBLIC_URL/api/me returned $status"
-              exit 0
-            fi
-            echo "attempt $i: got $status, retrying..."
-            sleep 3
-          done
-          echo "public health check failed after 5 attempts"
-          exit 1
-
-      - name: Rollback on failure
-        if: failure() && steps.prev.outputs.release != ''
-        env:
-          PREV_RELEASE: ${{ steps.prev.outputs.release }}
-        run: |
-          set -euo pipefail
-          EXPECTED_BASE="${DEPLOY_BASE:-/home/$DEPLOY_USER/projects/openape-testrun}"
-          if [[ ! "$PREV_RELEASE" =~ ^${EXPECTED_BASE}/releases/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]]; then
-            echo "refusing to roll back to unexpected path: $PREV_RELEASE"
-            exit 1
-          fi
-          echo "Rolling back to $PREV_RELEASE"
-          ssh "$DEPLOY_HOST" "ln -sfn $PREV_RELEASE $EXPECTED_BASE/current && sudo systemctl restart $DEPLOY_SERVICE"
-          echo "rollback complete"
+      - name: Deploy tested image
+        run: node scripts/deploy-image.mjs
