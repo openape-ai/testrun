@@ -1,18 +1,5 @@
-// Output helpers. Re-exports shared helpers from @openape/cli-auth and
-// keeps the tasks-specific stderr helpers (info/error) that are not part
-// of the shared surface.
-export { printJson, printLine, printNdjson, fmtTime } from '@openape/cli-auth'
-
-export interface OutputOptions {
-  json?: boolean
-  quiet?: boolean
-}
-
-export function info(msg: string, opts: OutputOptions = {}): void {
-  if (opts.quiet) return
-  process.stderr.write(`${msg}\n`)
-}
-
-export function error(msg: string): void {
-  process.stderr.write(`error: ${msg}\n`)
-}
+// Output helpers — now sourced from @openape/proof-cli (shared across all
+// proof-link CLIs). Re-exported here so command modules keep importing from
+// `../output.ts` unchanged.
+export { error, fmtTime, info, printJson, printLine, printNdjson } from '@openape/proof-cli'
+export type { OutputOptions } from '@openape/proof-cli'

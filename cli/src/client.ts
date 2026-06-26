@@ -6,16 +6,16 @@
  * unified apes session: `apes login` once per device, this client exchanges
  * the IdP token via POST /api/cli/exchange and caches the SP token.
  */
-import { createSpClient } from '@openape/cli-auth'
+import { createProofClient } from '@openape/proof-cli'
 import type { SpClientState } from '@openape/cli-auth'
 
 export type TestrunState = SpClientState
 
-export const testrunClient = createSpClient<TestrunState>({
-  defaultEndpoint: 'https://testrun.openape.ai',
+export const testrunClient = createProofClient<TestrunState>({
+  endpoint: 'https://testrun.openape.ai',
   envVar: 'APE_TESTRUNS_ENDPOINT',
   configFile: 'auth-testruns.json',
-  defaultAud: 'testrun.openape.ai',
+  aud: 'testrun.openape.ai',
 })
 
 export const {

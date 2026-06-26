@@ -1,6 +1,6 @@
 {
   "name": "@openape/ape-testruns",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI for testrun.openape.ai — upload a test run, share one link that proves it works",
   "type": "module",
   "license": "MIT",
@@ -31,6 +31,7 @@
   "dependencies": {
     "@openape/cli-auth": "^0.5.0",
     "@openape/core": "^0.11.0",
+    "@openape/proof-cli": "^0.1.1",
     "citty": "^0.1.6",
     "jose": "^5.9.6",
     "ofetch": "^1.4.1"
